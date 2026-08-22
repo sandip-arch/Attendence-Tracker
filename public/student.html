@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attendance Tracker - Student Dashboard</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-container">
+      <div class="brand">
+        Attendance<span class="brand-accent">Tracker</span>
+      </div>
+      <div class="nav-user">
+        <span id="student-name-display" style="font-weight: 500;">Loading...</span>
+        <button class="btn btn-secondary" onclick="handleLogout()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">
+          Sign Out
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    
+    <!-- Info Banner / Alert -->
+    <div id="student-alert-success" class="alert alert-success"></div>
+    <div id="student-alert-danger" class="alert alert-danger"></div>
+
+    <div class="dashboard-grid" style="margin-bottom: 2rem;">
+      <!-- Profile Card -->
+      <div class="glass-panel stat-card">
+        <h3 style="color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase;">Session Assigned</h3>
+        <div class="value" id="student-session-display" style="font-size: 1.8rem; color: var(--accent-violet);">Loading...</div>
+        <p id="student-email-display" style="font-size: 0.9rem; color: var(--text-muted);">email@example.com</p>
+      </div>
+
+      <!-- Schedule Card -->
+      <div class="glass-panel stat-card" style="grid-column: span 2;">
+        <h3 style="color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">Class Schedule</h3>
+        <div style="display: flex; justify-content: space-around; align-items: center; height: 70%; flex-wrap: wrap;">
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">SCHEDULED DAYS</div>
+            <div id="schedule-days" style="font-weight: 600; font-size: 1.1rem;">Loading...</div>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">TIMING</div>
+            <div id="schedule-time" style="font-weight: 600; font-size: 1.1rem;">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid dashboard-grid-main">
+      <!-- Check In/Out Section -->
+      <div class="glass-panel">
+        <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem; text-align: center;">Attendance Logger</h2>
+        
+        <div class="attendance-actions">
+          <div class="clock-display" id="live-clock">00:00:00</div>
+          <div style="color: var(--text-secondary); margin-top: -1rem; font-size: 0.9rem;" id="today-date-display">...</div>
+          
+          <div id="today-status-text" style="font-weight: 500; font-size: 0.95rem; margin: 0.5rem 0; text-align: center;">
+            Checking today's log...
+          </div>
+
+          <div class="action-buttons-group">
+            <button class="btn btn-emerald" id="btn-check-in" onclick="studentCheckIn()" disabled>
+              Check In
+            </button>
+            <button class="btn btn-rose" id="btn-check-out" onclick="studentCheckOut()" disabled>
+              Check Out
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Info / Sidebar -->
+      <div class="glass-panel">
+        <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Logging Guidelines</h3>
+        <ul style="color: var(--text-secondary); font-size: 0.85rem; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.75rem;">
+          <li>You can only check-in on days that are scheduled by your admin.</li>
+          <li>Check-ins and check-outs are set to <strong>Pending</strong>.</li>
+          <li>The admin must manually verify and approve your attendance logs before they are officially recorded.</li>
+          <li>If you miss logging or need edits, contact your administrator.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Attendance History Table -->
+    <div class="glass-panel" style="margin-top: 2rem;">
+      <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">My Attendance History (Recent)</h2>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Check In</th>
+              <th>Check Out</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="student-history-tbody">
+            <tr>
+              <td colspan="4" style="text-align: center; color: var(--text-muted);">Loading history logs...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      verifyUserRole('student');
+      initStudentDashboard();
+      
+      // Update Live Clock
+      setInterval(() => {
+        const d = new Date();
+        document.getElementById('live-clock').innerText = d.toTimeString().split(' ')[0];
+      }, 1000);
+      
+      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      document.getElementById('today-date-display').innerText = new Date().toLocaleDateString('en-US', options);
+    });
+  </script>
+</body>
+</html>
