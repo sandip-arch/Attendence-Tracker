@@ -247,7 +247,7 @@ router.get('/google/login', (req, res) => {
     return res.status(400).send('Google OAuth client configuration (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) is missing in server env variables.');
   }
 
-  const callbackUrl = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+  const callbackUrl = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
   const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${
     process.env.GOOGLE_CLIENT_ID
   }&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=profile%20email&prompt=select_account`;
@@ -265,7 +265,7 @@ router.get('/google/callback', async (req, res) => {
   }
 
   try {
-    const callbackUrl = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
 
     // Exchange auth code for access token
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {

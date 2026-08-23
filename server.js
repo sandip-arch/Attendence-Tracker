@@ -11,6 +11,7 @@ const connectDB = require('./config/db');
 connectDB();
 
 const app = express();
+app.set('trust proxy', true);
 
 // Middlewares
 app.use(cors());
