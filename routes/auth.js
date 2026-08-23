@@ -129,4 +129,115 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// @route   GET /api/auth/google/client-id
+// @desc    Get Google Client ID config
+// @access  Public
+router.get('/google/client-id', (req, res) => {
+  res.json({ clientId: process.env.GOOGLE_CLIENT_ID || null });
+});
+
+// Helper for Google login validation and DB insertion
+const handleGoogleUser = async (email, name, res) => {
+  try {
+    let user = await User.findOne({ email }).populate('session');
+
+    if (user) {
+      // User exists. Verify status.
+      if (user.role === 'student') {
+        if (!user.isApproved) {
+          return res.status(403).json({ message: 'Your Google registration is pending admin approval' });
+        }
+        if (!user.session) {
+          return res.status(403).json({ message: 'You are registered, but not assigned to any session yet. Please contact admin.' });
+        }
+        if (user.session.status === 'blocked') {
+          return res.status(403).json({ message: `Access denied. Your session (${user.session.name}) is blocked.` });
+        }
+      }
+
+      // Log in
+      return res.json({
+        token: generateToken(user._id),
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isApproved: user.isApproved,
+          session: user.session ? { id: user.session._id, name: user.session.name } : null
+        }
+      });
+    } else {
+      // User doesn't exist. Register as pending student.
+      const tempPassword = Math.random().toString(36).slice(-10);
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+      const newUser = await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        role: 'student',
+        session: null, // Admin will assign
+        isApproved: false
+      });
+
+      return res.status(201).json({
+        message: 'Google registration submitted successfully. Please wait for the admin to approve your account and assign your session.',
+        user: {
+          id: newUser._id,
+          name: newUser.name,
+          email: newUser.email,
+          session: null,
+          isApproved: false
+        }
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @route   POST /api/auth/google
+// @desc    Authenticate with real Google ID token
+// @access  Public
+router.post('/google', async (req, res) => {
+  const { idToken } = req.body;
+  if (!idToken) {
+    return res.status(400).json({ message: 'Google ID token is required' });
+  }
+
+  try {
+    // Validate with Google tokeninfo endpoint
+    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+    const payload = await response.json();
+
+    if (payload.error_description) {
+      return res.status(400).json({ message: `Google Token Verification Failed: ${payload.error_description}` });
+    }
+
+    const { email, name } = payload;
+    await handleGoogleUser(email, name, res);
+  } catch (error) {
+    console.error('Google Auth Error:', error);
+    res.status(500).json({ message: 'Internal server verification error' });
+  }
+});
+
+// @route   POST /api/auth/google/mock
+// @desc    Mock Google login for development/testing when GOOGLE_CLIENT_ID is unset
+// @access  Public
+router.post('/google/mock', async (req, res) => {
+  const { email, name } = req.body;
+  if (!email || !name) {
+    return res.status(400).json({ message: 'Email and Name are required for mock login' });
+  }
+
+  // Security check: Only allow mock login if GOOGLE_CLIENT_ID is not configured in env
+  if (process.env.GOOGLE_CLIENT_ID) {
+    return res.status(400).json({ message: 'Mock Google Login is disabled in production' });
+  }
+
+  await handleGoogleUser(email, name, res);
+});
+
 module.exports = router;

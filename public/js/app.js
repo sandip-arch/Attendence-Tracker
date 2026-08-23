@@ -162,11 +162,110 @@ async function handleRegister(e) {
 
     showAlert('auth-alert-success', res.message, 'success');
     e.target.reset();
-    switchAuthTab('login');
+    toggleDockerAuth('login');
   } catch (err) {
     showAlert('auth-alert-danger', err.message, 'danger');
   }
 }
+
+// ==========================================
+// GOOGLE AUTHENTICATION INTEGRATION
+// ==========================================
+
+let googleClientId = null;
+
+// Initialize Google sign-in configuration
+async function initGoogleAuthSettings() {
+  const container = document.getElementById('google-auth-container');
+  if (!container) return; // not on login page
+
+  try {
+    const res = await fetchAPI('/auth/google/client-id');
+    googleClientId = res.clientId;
+
+    if (googleClientId) {
+      // Initialize real Google GIS SDK
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: handleGoogleCredentialResponse
+      });
+
+      // Render the official Google Sign-in button, replacing our custom one
+      window.google.accounts.id.renderButton(
+        container,
+        { 
+          theme: "outline", 
+          size: "large", 
+          width: "334",
+          text: "continue_with"
+        }
+      );
+    }
+  } catch (err) {
+    console.error('Failed to initialize Google authentication:', err.message);
+  }
+}
+
+// Trigger Google sign-in (Mock demo login if client ID is not configured)
+async function triggerGoogleLogin() {
+  if (googleClientId) {
+    // If client ID is set, GIS SDK handles it. This custom button is hidden.
+    return;
+  }
+
+  // Otherwise, run MOCK Google login flow for testing
+  const email = prompt("Google Auth Demo Mode:\nEnter your Test Email address:", "student.demo@gmail.com");
+  if (!email) return;
+
+  const name = prompt("Google Auth Demo Mode:\nEnter your Full Name:", "Alex Mercer");
+  if (!name) return;
+
+  try {
+    const res = await fetchAPI('/auth/google/mock', {
+      method: 'POST',
+      body: JSON.stringify({ email, name })
+    });
+
+    handleGoogleAuthSuccess(res);
+  } catch (err) {
+    showAlert('auth-alert-danger', err.message, 'danger');
+  }
+}
+
+// Callback for real Google Login credentials response
+async function handleGoogleCredentialResponse(response) {
+  try {
+    const idToken = response.credential;
+    const res = await fetchAPI('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ idToken })
+    });
+
+    handleGoogleAuthSuccess(res);
+  } catch (err) {
+    showAlert('auth-alert-danger', err.message, 'danger');
+  }
+}
+
+// Common handler for successful Google authentication login/registration
+function handleGoogleAuthSuccess(res) {
+  if (res.token) {
+    // Success log in
+    localStorage.setItem('token', res.token);
+    localStorage.setItem('role', res.user.role);
+    localStorage.setItem('username', res.user.name);
+
+    if (res.user.role === 'admin') {
+      window.location.href = 'admin.html';
+    } else {
+      window.location.href = 'student.html';
+    }
+  } else {
+    // Successfully registered (201 state) - waiting for admin approval
+    showAlert('auth-alert-success', res.message, 'success');
+  }
+}
+
 
 
 // ==========================================
@@ -675,14 +774,26 @@ async function loadStudents() {
     } else {
       pendingTbody.innerHTML = '';
       pending.forEach(st => {
-        const sessName = st.session ? st.session.name : 'N/A';
         const appliedDate = new Date(st.createdAt).toLocaleDateString();
         
+        // Build session selector selectbox for pending students
+        let sessionOptions = '';
+        allSessionsCache.forEach(s => {
+          const isSelected = st.session && st.session._id === s._id ? 'selected' : '';
+          sessionOptions += `<option value="${s._id}" ${isSelected}>${s.name}</option>`;
+        });
+
         const row = document.createElement('tr');
         row.innerHTML = `
           <td><strong>${st.name}</strong></td>
           <td>${st.email}</td>
-          <td><span class="badge" style="background: rgba(139, 92, 246, 0.15); color: var(--accent-violet); border: 1px solid rgba(139, 92, 246, 0.3);">${sessName}</span></td>
+          <td>
+            <select class="form-control" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto;" 
+              onchange="changeStudentSession('${st._id}', this.value)">
+              <option value="" disabled ${!st.session ? 'selected' : ''}>Assign Session</option>
+              ${sessionOptions}
+            </select>
+          </td>
           <td>${appliedDate}</td>
           <td>
             <div style="display: flex; gap: 0.5rem;">
