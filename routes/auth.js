@@ -136,13 +136,57 @@ router.get('/google/client-id', (req, res) => {
   res.json({ clientId: process.env.GOOGLE_CLIENT_ID || null });
 });
 
-// Helper for Google login validation and DB insertion
-const handleGoogleUser = async (email, name, res) => {
+// Helper for redirecting authenticated Google user
+const handleGoogleRedirectUser = async (email, name, res, req) => {
+  try {
+    let user = await User.findOne({ email }).populate('session');
+    const frontendOrigin = `${req.protocol}://${req.get('host')}`;
+
+    if (user) {
+      // User exists. Verify role and status.
+      if (user.role === 'student') {
+        if (!user.isApproved) {
+          return res.redirect(`${frontendOrigin}/index.html?error=${encodeURIComponent('Your Google registration is pending admin approval')}`);
+        }
+        if (!user.session) {
+          return res.redirect(`${frontendOrigin}/index.html?error=${encodeURIComponent('You are registered, but not assigned to any session yet. Please contact admin.')}`);
+        }
+        if (user.session.status === 'blocked') {
+          return res.redirect(`${frontendOrigin}/index.html?error=${encodeURIComponent(`Access denied. Your session (${user.session.name}) is blocked.`)}`);
+        }
+      }
+
+      // Successful login redirect with parameters
+      const token = generateToken(user._id);
+      return res.redirect(`${frontendOrigin}/index.html?token=${token}&role=${user.role}&username=${encodeURIComponent(user.name)}`);
+    } else {
+      // User doesn't exist. Create pending student.
+      const tempPassword = Math.random().toString(36).slice(-10);
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+      await User.create({
+        name,
+        email,
+        password: hashedPassword,
+        role: 'student',
+        session: null,
+        isApproved: false
+      });
+
+      return res.redirect(`${frontendOrigin}/index.html?success=${encodeURIComponent('Google registration submitted successfully. Please wait for the admin to approve your account.')}`);
+    }
+  } catch (error) {
+    console.error('Error redirecting Google user:', error);
+    res.status(500).send('Internal error handling Google redirect');
+  }
+};
+
+// Helper for Google login validation in mock API mode
+const handleGoogleMockUser = async (email, name, res) => {
   try {
     let user = await User.findOne({ email }).populate('session');
 
     if (user) {
-      // User exists. Verify status.
       if (user.role === 'student') {
         if (!user.isApproved) {
           return res.status(403).json({ message: 'Your Google registration is pending admin approval' });
@@ -155,7 +199,6 @@ const handleGoogleUser = async (email, name, res) => {
         }
       }
 
-      // Log in
       return res.json({
         token: generateToken(user._id),
         user: {
@@ -168,7 +211,6 @@ const handleGoogleUser = async (email, name, res) => {
         }
       });
     } else {
-      // User doesn't exist. Register as pending student.
       const tempPassword = Math.random().toString(36).slice(-10);
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
@@ -177,7 +219,7 @@ const handleGoogleUser = async (email, name, res) => {
         email,
         password: hashedPassword,
         role: 'student',
-        session: null, // Admin will assign
+        session: null,
         isApproved: false
       });
 
@@ -197,29 +239,67 @@ const handleGoogleUser = async (email, name, res) => {
   }
 };
 
-// @route   POST /api/auth/google
-// @desc    Authenticate with real Google ID token
+// @route   GET /api/auth/google/login
+// @desc    Redirect to Google OAuth consent page
 // @access  Public
-router.post('/google', async (req, res) => {
-  const { idToken } = req.body;
-  if (!idToken) {
-    return res.status(400).json({ message: 'Google ID token is required' });
+router.get('/google/login', (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(400).send('Google OAuth client configuration (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) is missing in server env variables.');
+  }
+
+  const callbackUrl = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${
+    process.env.GOOGLE_CLIENT_ID
+  }&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=profile%20email&prompt=select_account`;
+
+  res.redirect(googleAuthUrl);
+});
+
+// @route   GET /api/auth/google/callback
+// @desc    OAuth callback that handles authorization codes
+// @access  Public
+router.get('/google/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) {
+    return res.status(400).send('Authorization code is missing');
   }
 
   try {
-    // Validate with Google tokeninfo endpoint
-    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
-    const payload = await response.json();
+    const callbackUrl = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
 
-    if (payload.error_description) {
-      return res.status(400).json({ message: `Google Token Verification Failed: ${payload.error_description}` });
+    // Exchange auth code for access token
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: callbackUrl,
+        grant_type: 'authorization_code'
+      })
+    });
+
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.access_token) {
+      console.error('Google token exchange error:', tokenData);
+      return res.status(400).send('Google OAuth code exchange failed');
     }
 
-    const { email, name } = payload;
-    await handleGoogleUser(email, name, res);
+    // Fetch user profile info
+    const profileResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+    });
+
+    const profile = await profileResponse.json();
+    if (!profile.email) {
+      return res.status(400).send('Unable to retrieve email from Google login');
+    }
+
+    await handleGoogleRedirectUser(profile.email, profile.name || profile.email.split('@')[0], res, req);
   } catch (error) {
-    console.error('Google Auth Error:', error);
-    res.status(500).json({ message: 'Internal server verification error' });
+    console.error('Google OAuth callback handler error:', error);
+    res.status(500).send('Internal server callback error');
   }
 });
 
@@ -232,12 +312,12 @@ router.post('/google/mock', async (req, res) => {
     return res.status(400).json({ message: 'Email and Name are required for mock login' });
   }
 
-  // Security check: Only allow mock login if GOOGLE_CLIENT_ID is not configured in env
+  // Disable mock login if GOOGLE_CLIENT_ID is configured in env
   if (process.env.GOOGLE_CLIENT_ID) {
     return res.status(400).json({ message: 'Mock Google Login is disabled in production' });
   }
 
-  await handleGoogleUser(email, name, res);
+  await handleGoogleMockUser(email, name, res);
 });
 
 module.exports = router;

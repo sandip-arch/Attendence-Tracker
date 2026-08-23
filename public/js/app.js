@@ -174,7 +174,7 @@ async function handleRegister(e) {
 
 let googleClientId = null;
 
-// Initialize Google sign-in configuration
+// Initialize Google sign-in configuration & handle URL redirect parameters
 async function initGoogleAuthSettings() {
   const container = document.getElementById('google-auth-container');
   if (!container) return; // not on login page
@@ -182,38 +182,59 @@ async function initGoogleAuthSettings() {
   try {
     const res = await fetchAPI('/auth/google/client-id');
     googleClientId = res.clientId;
-
-    if (googleClientId) {
-      // Initialize real Google GIS SDK
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: handleGoogleCredentialResponse
-      });
-
-      // Render the official Google Sign-in button, replacing our custom one
-      window.google.accounts.id.renderButton(
-        container,
-        { 
-          theme: "outline", 
-          size: "large", 
-          width: "334",
-          text: "continue_with"
-        }
-      );
-    }
   } catch (err) {
-    console.error('Failed to initialize Google authentication:', err.message);
+    console.error('Failed to load Google Client configuration:', err.message);
   }
-}
 
-// Trigger Google sign-in (Mock demo login if client ID is not configured)
-async function triggerGoogleLogin() {
-  if (googleClientId) {
-    // If client ID is set, GIS SDK handles it. This custom button is hidden.
+  // Parse redirect query parameters from the URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get('token');
+  const role = urlParams.get('role');
+  const username = urlParams.get('username');
+  const error = urlParams.get('error');
+  const success = urlParams.get('success');
+
+  if (token && role && username) {
+    // Save credentials
+    localStorage.setItem('token', token);
+    localStorage.setItem('role', role);
+    localStorage.setItem('username', username);
+
+    // Clean URL query parameters
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    // Direct user to correct dashboard
+    if (role === 'admin') {
+      window.location.href = 'admin.html';
+    } else {
+      window.location.href = 'student.html';
+    }
     return;
   }
 
-  // Otherwise, run MOCK Google login flow for testing
+  if (error) {
+    showAlert('auth-alert-danger', error, 'danger');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  if (success) {
+    showAlert('auth-alert-success', success, 'success');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
+// Trigger Google sign-in redirect (or Mock Login if GOOGLE_CLIENT_ID is not configured)
+async function triggerGoogleLogin() {
+  if (googleClientId) {
+    // Redirect to backend OAuth initiator
+    window.location.href = '/api/auth/google/login';
+  } else {
+    // Fallback to Mock login for testing/local verification
+    await runGoogleMockLogin();
+  }
+}
+
+async function runGoogleMockLogin() {
   const email = prompt("Google Auth Demo Mode:\nEnter your Test Email address:", "student.demo@gmail.com");
   if (!email) return;
 
@@ -232,22 +253,6 @@ async function triggerGoogleLogin() {
   }
 }
 
-// Callback for real Google Login credentials response
-async function handleGoogleCredentialResponse(response) {
-  try {
-    const idToken = response.credential;
-    const res = await fetchAPI('/auth/google', {
-      method: 'POST',
-      body: JSON.stringify({ idToken })
-    });
-
-    handleGoogleAuthSuccess(res);
-  } catch (err) {
-    showAlert('auth-alert-danger', err.message, 'danger');
-  }
-}
-
-// Common handler for successful Google authentication login/registration
 function handleGoogleAuthSuccess(res) {
   if (res.token) {
     // Success log in
