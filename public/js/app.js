@@ -308,17 +308,20 @@ async function refreshStudentData() {
     const statusText = document.getElementById('today-status-text');
 
     if (!data.todayAttendance) {
-      statusText.innerHTML = 'Today status: <span class="badge badge-pending">Not Checked In</span>';
+      statusText.innerText = 'Today status : NOT CHECKED IN';
+      statusText.className = 'status-alert-badge'; // Warning yellow
       btnIn.disabled = false;
       btnOut.disabled = true;
     } else {
       const att = data.todayAttendance;
       if (att.checkIn && !att.checkOut) {
-        statusText.innerHTML = `Checked In at: <strong>${att.checkIn}</strong> (Status: <span class="badge badge-${att.status}">${att.status}</span>)`;
+        statusText.innerText = `Today status : CHECKED IN (${att.status.toUpperCase()})`;
+        statusText.className = att.status === 'approved' ? 'status-alert-badge badge-success' : 'status-alert-badge';
         btnIn.disabled = true;
         btnOut.disabled = false;
       } else if (att.checkIn && att.checkOut) {
-        statusText.innerHTML = `Checked In: <strong>${att.checkIn}</strong> | Checked Out: <strong>${att.checkOut}</strong> (Status: <span class="badge badge-${att.status}">${att.status}</span>)`;
+        statusText.innerText = `Today status : COMPLETED (${att.status.toUpperCase()})`;
+        statusText.className = att.status === 'approved' ? 'status-alert-badge badge-success' : 'status-alert-badge';
         btnIn.disabled = true;
         btnOut.disabled = true;
       }
