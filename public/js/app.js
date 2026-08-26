@@ -176,17 +176,7 @@ let googleClientId = null;
 
 // Initialize Google sign-in configuration & handle URL redirect parameters
 async function initGoogleAuthSettings() {
-  const container = document.getElementById('google-auth-container');
-  if (!container) return; // not on login page
-
-  try {
-    const res = await fetchAPI('/auth/google/client-id');
-    googleClientId = res.clientId;
-  } catch (err) {
-    console.error('Failed to load Google Client configuration:', err.message);
-  }
-
-  // Parse redirect query parameters from the URL
+  // 1. Parse redirect query parameters from the URL first (so they are cleared on refresh)
   const urlParams = new URLSearchParams(window.location.search);
   const token = urlParams.get('token');
   const role = urlParams.get('role');
@@ -220,6 +210,17 @@ async function initGoogleAuthSettings() {
   if (success) {
     showAlert('auth-alert-success', success, 'success');
     window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  // 2. Fetch Google Client configuration if Google button is present
+  const googleBtn = document.querySelector('.google-docker-btn');
+  if (!googleBtn) return; // not on login page
+
+  try {
+    const res = await fetchAPI('/auth/google/client-id');
+    googleClientId = res.clientId;
+  } catch (err) {
+    console.error('Failed to load Google Client configuration:', err.message);
   }
 }
 
