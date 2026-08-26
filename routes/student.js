@@ -4,22 +4,35 @@ const { protect, student } = require('../middleware/authMiddleware');
 const Attendance = require('../models/Attendance');
 const Session = require('../models/Session');
 
-// Helper to get server local date string (YYYY-MM-DD)
-const getLocalDateString = () => {
+// Helper to get current Date and Time in Indian Standard Time (IST - Asia/Kolkata)
+const getISTDateTimeParts = () => {
   const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const date = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${date}`;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(d);
+  const map = {};
+  parts.forEach(p => map[p.type] = p.value);
+  
+  const dateStr = `${map.year}-${map.month}-${map.day}`;
+  const timeStr = `${map.hour}:${map.minute}:${map.second}`;
+  
+  return { date: dateStr, time: timeStr };
 };
 
-// Helper to get server local time string (HH:MM:SS)
+const getLocalDateString = () => {
+  return getISTDateTimeParts().date;
+};
+
 const getLocalTimeString = () => {
-  const d = new Date();
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const seconds = String(d.getSeconds()).padStart(2, '0');
-  return `${hours}:${minutes}:${seconds}`;
+  return getISTDateTimeParts().time;
 };
 
 // Apply protect & student middlewares to all student endpoints
