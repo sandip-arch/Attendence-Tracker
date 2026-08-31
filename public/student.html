@@ -132,6 +132,29 @@
       border-bottom: 1px solid #f1f5f9;
       font-size: 0.9rem;
     }
+
+    .badge-late {
+      background-color: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .badge-auto {
+      background-color: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -210,9 +233,9 @@
         <h2 style="font-size: 1.25rem; font-weight: 600; color: #0f172a; margin-bottom: 0.5rem;">Logging Guidelines</h2>
         <ul class="guidelines-list">
           <li>You can only check-in on days that are scheduled by your admin.</li>
-          <li>Check-ins and check-outs are set to <strong>Pending</strong>.</li>
-          <li>The admin must manually verify and approve your attendance logs before they are officially recorded.</li>
-          <li>If you miss logging or need edits, contact your administrator.</li>
+          <li><strong>Late Policy:</strong> If checking in more than 30 minutes after start time, a reason must be submitted.</li>
+          <li><strong>Auto Check-Out:</strong> If you forget to check out, the system automatically checks you out at the session end time.</li>
+          <li>The admin manually reviews and approves all logs.</li>
         </ul>
       </div>
     </div>
@@ -227,12 +250,13 @@
               <th>Date</th>
               <th>Check In</th>
               <th>Check Out</th>
+              <th>Notes / Reason</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="student-history-tbody">
             <tr>
-              <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 2rem;">No attendance logged yet.</td>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No attendance logged yet.</td>
             </tr>
           </tbody>
         </table>
@@ -241,19 +265,52 @@
 
   </main>
 
+  <!-- ========================================== -->
+  <!-- MODAL: LATE CHECK-IN REASON -->
+  <!-- ========================================== -->
+  <div id="late-reason-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="color: #b45309; display: flex; align-items: center; gap: 0.5rem; font-size: 1.1rem;">
+          <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          Late Check-In Reason Required
+        </h3>
+        <span class="close-btn" onclick="closeModal('late-reason-modal')">&times;</span>
+      </div>
+      <form id="late-reason-form" onsubmit="submitLateCheckIn(event)">
+        <p style="font-size: 0.875rem; color: #475569; margin-bottom: 1rem;">
+          You are checking in more than 30 minutes after your scheduled session start time. Please provide a valid reason for the delay.
+        </p>
+        <div class="form-group">
+          <label for="late-reason-input">Reason for Delay*</label>
+          <textarea id="late-reason-input" class="form-control" rows="4" placeholder="e.g., Traffic congestion, medical emergency, technical issue..." required style="resize: vertical; font-family: inherit; width: 100%;"></textarea>
+        </div>
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('late-reason-modal')">Cancel</button>
+          <button type="submit" class="btn btn-emerald">Submit Check-In</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="js/app.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       verifyUserRole('student');
       initStudentDashboard();
       
-      // Keep Clock ticking
+      // Keep Clock ticking in IST
       setInterval(() => {
         const d = new Date();
-        document.getElementById('live-clock').innerText = d.toTimeString().split(' ')[0];
+        document.getElementById('live-clock').innerText = d.toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour12: false
+        });
       }, 1000);
       
-      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      const options = { timeZone: 'Asia/Kolkata', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
       document.getElementById('today-date-display').innerText = new Date().toLocaleDateString('en-US', options);
     });
   </script>

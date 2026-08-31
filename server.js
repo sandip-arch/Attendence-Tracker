@@ -43,7 +43,16 @@ app.use((err, req, res, next) => {
   });
 });
 
+const { runAutoCheckOut } = require('./services/attendanceService');
+
+// Start periodic auto-checkout worker (runs every 60 seconds)
+setInterval(() => {
+  runAutoCheckOut();
+}, 60 * 1000);
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  // Initial run on startup
+  runAutoCheckOut();
 });

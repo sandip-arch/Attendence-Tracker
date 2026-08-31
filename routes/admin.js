@@ -5,6 +5,7 @@ const { protect, admin } = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const Session = require('../models/Session');
 const Attendance = require('../models/Attendance');
+const { runAutoCheckOut } = require('../services/attendanceService');
 
 // Apply admin protection to all routes in this router
 router.use(protect, admin);
@@ -181,6 +182,8 @@ router.put('/students/:id/session', async (req, res) => {
 // @access  Private/Admin
 router.get('/attendance/pending', async (req, res) => {
   try {
+    await runAutoCheckOut();
+
     const pendingLogs = await Attendance.find({ status: 'pending' })
       .populate('student', 'name email')
       .populate('session', 'name')
@@ -196,6 +199,8 @@ router.get('/attendance/pending', async (req, res) => {
 // @access  Private/Admin
 router.get('/attendance', async (req, res) => {
   try {
+    await runAutoCheckOut();
+
     const { sessionId, studentId } = req.query;
     let query = {};
     if (sessionId) query.session = sessionId;
@@ -236,10 +241,10 @@ router.put('/attendance/:id/approve', async (req, res) => {
 });
 
 // @route   PUT /api/admin/attendance/:id/edit
-// @desc    Edit details of an existing attendance record (date, in, out)
+// @desc    Edit details of an existing attendance record (date, in, out, status, lateReason, isLate, isAutoCheckOut)
 // @access  Private/Admin
 router.put('/attendance/:id/edit', async (req, res) => {
-  const { date, checkIn, checkOut, status } = req.body;
+  const { date, checkIn, checkOut, status, isLate, lateReason, isAutoCheckOut } = req.body;
   try {
     const log = await Attendance.findById(req.params.id);
     if (!log) {
@@ -250,6 +255,9 @@ router.put('/attendance/:id/edit', async (req, res) => {
     if (checkIn !== undefined) log.checkIn = checkIn;
     if (checkOut !== undefined) log.checkOut = checkOut;
     if (status) log.status = status;
+    if (isLate !== undefined) log.isLate = Boolean(isLate);
+    if (lateReason !== undefined) log.lateReason = lateReason ? lateReason.trim() : null;
+    if (isAutoCheckOut !== undefined) log.isAutoCheckOut = Boolean(isAutoCheckOut);
 
     await log.save();
     res.json({ message: 'Attendance record updated successfully', log });
@@ -262,14 +270,14 @@ router.put('/attendance/:id/edit', async (req, res) => {
 // @desc    Manually add an attendance record
 // @access  Private/Admin
 router.post('/attendance/manual', async (req, res) => {
-  const { studentId, sessionId, date, checkIn, checkOut, status } = req.body;
+  const { studentId, sessionId, date, checkIn, checkOut, status, isLate, lateReason, isAutoCheckOut } = req.body;
 
   try {
     if (!studentId || !sessionId || !date) {
       return res.status(400).json({ message: 'Student ID, Session ID and Date are required.' });
     }
 
-    // Check if record already exists for today
+    // Check if record already exists for this student on this date
     const exists = await Attendance.findOne({ student: studentId, date });
     if (exists) {
       return res.status(400).json({ message: 'An attendance record already exists for this student on this date.' });
@@ -281,7 +289,10 @@ router.post('/attendance/manual', async (req, res) => {
       date,
       checkIn: checkIn || null,
       checkOut: checkOut || null,
-      status: status || 'approved'
+      status: status || 'approved',
+      isLate: Boolean(isLate),
+      lateReason: lateReason ? lateReason.trim() : null,
+      isAutoCheckOut: Boolean(isAutoCheckOut)
     });
 
     res.status(201).json({ message: 'Attendance record created manually', log });
@@ -300,6 +311,8 @@ router.post('/attendance/manual', async (req, res) => {
 // @access  Private/Admin
 router.get('/attendance/export', async (req, res) => {
   try {
+    await runAutoCheckOut();
+
     const { sessionId } = req.query;
     let query = {};
     if (sessionId) {
@@ -315,13 +328,16 @@ router.get('/attendance/export', async (req, res) => {
     const worksheet = workbook.addWorksheet('Attendance Logs');
 
     worksheet.columns = [
-      { header: 'Student Name', key: 'studentName', width: 25 },
+      { header: 'Student Name', key: 'studentName', width: 22 },
       { header: 'Student Email', key: 'studentEmail', width: 25 },
       { header: 'Session', key: 'sessionName', width: 12 },
-      { header: 'Date', key: 'date', width: 15 },
-      { header: 'Check In', key: 'checkIn', width: 15 },
-      { header: 'Check Out', key: 'checkOut', width: 15 },
-      { header: 'Status', key: 'status', width: 15 }
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Check In', key: 'checkIn', width: 12 },
+      { header: 'Check Out', key: 'checkOut', width: 12 },
+      { header: 'Late Check-In?', key: 'isLate', width: 14 },
+      { header: 'Late Reason', key: 'lateReason', width: 30 },
+      { header: 'Auto Check-Out?', key: 'isAutoCheckOut', width: 16 },
+      { header: 'Status', key: 'status', width: 12 }
     ];
 
     logs.forEach(log => {
@@ -332,6 +348,9 @@ router.get('/attendance/export', async (req, res) => {
         date: log.date,
         checkIn: log.checkIn || 'N/A',
         checkOut: log.checkOut || 'N/A',
+        isLate: log.isLate ? 'Yes' : 'No',
+        lateReason: log.lateReason || 'N/A',
+        isAutoCheckOut: log.isAutoCheckOut ? 'Yes' : 'No',
         status: log.status
       });
     });

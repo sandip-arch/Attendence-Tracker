@@ -29,7 +29,10 @@ async function fetchAPI(endpoint, options = {}) {
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.message || 'Something went wrong');
+    const error = new Error(data.message || 'Something went wrong');
+    error.data = data;
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -59,68 +62,66 @@ function handleLogout() {
 function verifyUserRole(expectedRole) {
   const token = localStorage.getItem('token');
   const role = localStorage.getItem('role');
-  
-  if (!token || role !== expectedRole) {
-    localStorage.clear();
+
+  if (!token || !role) {
     window.location.href = 'index.html';
+    return;
+  }
+
+  if (role !== expectedRole) {
+    if (role === 'admin') {
+      window.location.href = 'admin.html';
+    } else {
+      window.location.href = 'student.html';
+    }
   }
 }
 
-// Modal Toggle Helpers
+// Modal control helpers
 function openModal(modalId) {
-  document.getElementById(modalId).style.display = 'flex';
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    modal.style.display = 'flex';
+  }
 }
 
 function closeModal(modalId) {
-  document.getElementById(modalId).style.display = 'none';
-}
-
-
-// ==========================================
-// PORTAL: LOGIN & REGISTER LOGIC
-// ==========================================
-
-function switchAuthTab(type) {
-  const tabLogin = document.getElementById('tab-login');
-  const tabRegister = document.getElementById('tab-register');
-  const formLogin = document.getElementById('login-form');
-  const formRegister = document.getElementById('register-form');
-
-  if (type === 'login') {
-    tabLogin.classList.add('active');
-    tabRegister.classList.remove('active');
-    formLogin.style.display = 'block';
-    formRegister.style.display = 'none';
-  } else {
-    tabLogin.classList.remove('active');
-    tabRegister.classList.add('active');
-    formLogin.style.display = 'none';
-    formRegister.style.display = 'block';
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    modal.style.display = 'none';
   }
 }
 
-// Populate session dropdown for registering students
+// Close modals on clicking backdrop
+window.onclick = function(event) {
+  if (event.target.classList.contains('modal')) {
+    event.target.style.display = 'none';
+  }
+};
+
+
+// ==========================================
+// AUTHENTICATION LOGIC (INDEX.HTML)
+// ==========================================
+
 async function loadSessionsDropdown() {
   const select = document.getElementById('register-session');
   if (!select) return;
   
   try {
     const sessions = await fetchAPI('/auth/sessions');
-    // Clear initial items
-    select.innerHTML = '<option value="" disabled selected>Select a session (e.g., s2, s3)</option>';
-    
+    select.innerHTML = '<option value="" disabled selected>Select session</option>';
     sessions.forEach(sess => {
-      const opt = document.createElement('option');
-      opt.value = sess._id;
-      opt.textContent = `${sess.name} (${sess.schedule.days.join(', ') || 'No Schedule'})`;
-      select.appendChild(opt);
+      const option = document.createElement('option');
+      option.value = sess._id;
+      option.textContent = sess.name;
+      select.appendChild(option);
     });
   } catch (err) {
     console.error('Failed to load sessions:', err.message);
   }
 }
 
-// Handle login submit
 async function handleLogin(e) {
   e.preventDefault();
   const email = document.getElementById('login-email').value;
@@ -146,27 +147,52 @@ async function handleLogin(e) {
   }
 }
 
-// Handle Student registration submit
 async function handleRegister(e) {
   e.preventDefault();
   const name = document.getElementById('register-name').value;
   const email = document.getElementById('register-email').value;
   const password = document.getElementById('register-password').value;
-  const sessionId = document.getElementById('register-session').value;
+  const session = document.getElementById('register-session').value;
 
   try {
     const res = await fetchAPI('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name, email, password, sessionId })
+      body: JSON.stringify({ name, email, password, session })
     });
 
     showAlert('auth-alert-success', res.message, 'success');
-    e.target.reset();
-    toggleDockerAuth('login');
+    document.getElementById('register-form').reset();
+    
+    // Toggle back to login form after brief delay
+    setTimeout(() => {
+      if (typeof toggleDockerAuth === 'function') {
+        toggleDockerAuth('login');
+      }
+    }, 2000);
+
   } catch (err) {
     showAlert('auth-alert-danger', err.message, 'danger');
   }
 }
+
+function toggleAuthMode(mode) {
+  const loginForm = document.getElementById('login-form');
+  const registerForm = document.getElementById('register-form');
+  const toggleBtn = document.getElementById('toggle-auth-btn');
+
+  if (mode === 'register') {
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'block';
+    toggleBtn.innerText = 'Already have an account? Sign In';
+    toggleBtn.setAttribute('onclick', "toggleAuthMode('login')");
+  } else {
+    loginForm.style.display = 'block';
+    registerForm.style.display = 'none';
+    toggleBtn.innerText = "Don't have an account? Sign Up";
+    toggleBtn.setAttribute('onclick', "toggleAuthMode('register')");
+  }
+}
+
 
 // ==========================================
 // GOOGLE AUTHENTICATION INTEGRATION
@@ -273,7 +299,6 @@ function handleGoogleAuthSuccess(res) {
 }
 
 
-
 // ==========================================
 // STUDENT DASHBOARD LOGIC
 // ==========================================
@@ -316,12 +341,12 @@ async function refreshStudentData() {
     } else {
       const att = data.todayAttendance;
       if (att.checkIn && !att.checkOut) {
-        statusText.innerText = `Today status : CHECKED IN (${att.status.toUpperCase()})`;
+        statusText.innerText = `Today status : CHECKED IN (${att.status.toUpperCase()})${att.isLate ? ' [LATE]' : ''}`;
         statusText.className = att.status === 'approved' ? 'status-alert-badge badge-success' : 'status-alert-badge';
         btnIn.disabled = true;
         btnOut.disabled = false;
       } else if (att.checkIn && att.checkOut) {
-        statusText.innerText = `Today status : COMPLETED (${att.status.toUpperCase()})`;
+        statusText.innerText = `Today status : COMPLETED (${att.status.toUpperCase()})${att.isAutoCheckOut ? ' [AUTO-CHECKOUT]' : ''}`;
         statusText.className = att.status === 'approved' ? 'status-alert-badge badge-success' : 'status-alert-badge';
         btnIn.disabled = true;
         btnOut.disabled = true;
@@ -343,17 +368,29 @@ async function loadStudentHistory() {
   try {
     const logs = await fetchAPI('/student/history');
     if (logs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No attendance logged yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No attendance logged yet.</td></tr>';
       return;
     }
 
     tbody.innerHTML = '';
     logs.forEach(log => {
+      let lateBadge = '<span style="color: #64748b; font-size: 0.8rem;">On Time</span>';
+      if (log.isLate) {
+        const reasonText = log.lateReason ? (log.lateReason.length > 25 ? log.lateReason.substring(0, 25) + '...' : log.lateReason) : 'Late';
+        lateBadge = `<span class="badge-late" title="${(log.lateReason || '').replace(/"/g, '&quot;')}">⚠️ ${reasonText}</span>`;
+      }
+
+      let checkOutDisplay = log.checkOut || '--:--:--';
+      if (log.isAutoCheckOut) {
+        checkOutDisplay += ` <span class="badge-auto">Auto</span>`;
+      }
+
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>${log.date}</td>
         <td>${log.checkIn || '--:--:--'}</td>
-        <td>${log.checkOut || '--:--:--'}</td>
+        <td>${checkOutDisplay}</td>
+        <td>${lateBadge}</td>
         <td><span class="badge badge-${log.status}">${log.status}</span></td>
       `;
       tbody.appendChild(row);
@@ -365,11 +402,45 @@ async function loadStudentHistory() {
 
 async function studentCheckIn() {
   try {
-    const res = await fetchAPI('/student/check-in', { method: 'POST' });
+    const res = await fetchAPI('/student/check-in', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
     showAlert('student-alert-success', res.message, 'success');
     await refreshStudentData();
   } catch (err) {
+    // If backend reports student is late (>30 min), open late reason modal
+    if (err.data && err.data.requiresReason) {
+      document.getElementById('late-reason-input').value = '';
+      openModal('late-reason-modal');
+      setTimeout(() => {
+        const input = document.getElementById('late-reason-input');
+        if (input) input.focus();
+      }, 100);
+      return;
+    }
     showAlert('student-alert-danger', err.message, 'danger');
+  }
+}
+
+async function submitLateCheckIn(e) {
+  e.preventDefault();
+  const lateReason = document.getElementById('late-reason-input').value;
+  if (!lateReason || lateReason.trim() === '') {
+    alert('Please enter a valid reason for late check-in.');
+    return;
+  }
+
+  try {
+    const res = await fetchAPI('/student/check-in', {
+      method: 'POST',
+      body: JSON.stringify({ lateReason: lateReason.trim() })
+    });
+    closeModal('late-reason-modal');
+    showAlert('student-alert-success', res.message, 'success');
+    await refreshStudentData();
+  } catch (err) {
+    alert(err.message);
   }
 }
 
@@ -450,22 +521,24 @@ async function initAdminDashboard() {
     if (filterStud) {
       filterStud.innerHTML = '<option value="">All Students</option>';
       allStudentsCache.forEach(st => {
-        if (st.isApproved) {
-          const opt = document.createElement('option');
-          opt.value = st._id;
-          opt.textContent = `${st.name} (${st.email})`;
-          filterStud.appendChild(opt);
-        }
+        const opt = document.createElement('option');
+        opt.value = st._id;
+        opt.textContent = `${st.name} (${st.email})`;
+        filterStud.appendChild(opt);
       });
     }
 
-  } catch (err) {
-    console.error('Failed to cache metadata:', err.message);
-  }
+    // Load initial tab
+    await loadPendingApprovals();
 
-  // Load Pending Approvals and badge counts
-  await loadPendingApprovals();
+  } catch (err) {
+    showAlert('admin-alert-danger', err.message, 'danger');
+  }
 }
+
+// ==========================================
+// ADMIN: PENDING APPROVALS
+// ==========================================
 
 async function loadPendingApprovals() {
   const tbody = document.getElementById('pending-logs-tbody');
@@ -474,8 +547,8 @@ async function loadPendingApprovals() {
   try {
     const logs = await fetchAPI('/admin/attendance/pending');
     
-    // Update Badge
-    const badge = document.getElementById('pending-count-badge');
+    // Update badge counter if exists
+    const badge = document.getElementById('pending-approvals-count');
     if (badge) {
       if (logs.length > 0) {
         badge.innerText = logs.length;
@@ -486,7 +559,17 @@ async function loadPendingApprovals() {
     }
 
     if (logs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No pending attendance records to approve.</td></tr>';
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0a2 2 0 01-2 2H6a2 2 0 01-2-2m16 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v2m4 6h4v1.5a1.5 1.5 0 01-3 0V17h-1zm3 0h.01M9 17h.01" />
+              </svg>
+              <p>No pending attendance records to approve.</p>
+            </div>
+          </td>
+        </tr>`;
       return;
     }
 
@@ -495,13 +578,26 @@ async function loadPendingApprovals() {
       const studentName = log.student ? log.student.name : 'Deleted Student';
       const sessionName = log.session ? log.session.name : 'N/A';
       
+      let lateBadge = '<span style="color: #64748b; font-size: 0.8rem;">On Time</span>';
+      if (log.isLate) {
+        const safeReason = (log.lateReason || 'No reason provided').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeName = studentName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        lateBadge = `<button class="btn btn-secondary badge-late" style="cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="openReasonModal('${safeName}', '${log.date}', '${log.checkIn || ''}', '${safeReason}')">⚠️ View Reason</button>`;
+      }
+
+      let checkOutDisplay = log.checkOut || '--:--:--';
+      if (log.isAutoCheckOut) {
+        checkOutDisplay += `<br><span class="badge-auto">Auto Closed</span>`;
+      }
+
       const row = document.createElement('tr');
       row.innerHTML = `
         <td><strong>${studentName}</strong><br><span style="font-size:0.75rem; color: var(--text-muted);">${log.student ? log.student.email : ''}</span></td>
         <td><span class="badge badge-approved" style="background: rgba(139, 92, 246, 0.15); color: var(--accent-violet); border: 1px solid rgba(139, 92, 246, 0.3);">${sessionName}</span></td>
         <td>${log.date}</td>
         <td>${log.checkIn || '--:--:--'}</td>
-        <td>${log.checkOut || '--:--:--'}</td>
+        <td>${checkOutDisplay}</td>
+        <td>${lateBadge}</td>
         <td><span class="badge badge-pending">pending</span></td>
         <td>
           <div style="display: flex; gap: 0.5rem;">
@@ -512,7 +608,7 @@ async function loadPendingApprovals() {
               Reject
             </button>
             <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" 
-              onclick="triggerEditLogModal('${log._id}', '${studentName}', '${log.date}', '${log.checkIn || ''}', '${log.checkOut || ''}', '${log.status}')">
+              onclick="triggerEditLogModal('${log._id}', '${studentName.replace(/'/g, "\\'")}', '${log.date}', '${log.checkIn || ''}', '${log.checkOut || ''}', '${log.status}', ${Boolean(log.isLate)}, '${(log.lateReason || '').replace(/'/g, "\\'")}', ${Boolean(log.isAutoCheckOut)})">
               Edit
             </button>
           </div>
@@ -558,7 +654,7 @@ async function loadAllLogs() {
   try {
     const logs = await fetchAPI(`/admin/attendance${query}`);
     if (logs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No attendance records found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No attendance records found.</td></tr>';
       return;
     }
 
@@ -568,6 +664,18 @@ async function loadAllLogs() {
       const studentEmail = log.student ? log.student.email : 'N/A';
       const sessionName = log.session ? log.session.name : 'N/A';
 
+      let lateBadge = '<span style="color: #64748b; font-size: 0.8rem;">On Time</span>';
+      if (log.isLate) {
+        const safeReason = (log.lateReason || 'No reason provided').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeName = studentName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        lateBadge = `<button class="btn btn-secondary badge-late" style="cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="openReasonModal('${safeName}', '${log.date}', '${log.checkIn || ''}', '${safeReason}')">⚠️ Reason</button>`;
+      }
+
+      let checkOutDisplay = log.checkOut || '--:--:--';
+      if (log.isAutoCheckOut) {
+        checkOutDisplay += ` <span class="badge-auto">Auto</span>`;
+      }
+
       const row = document.createElement('tr');
       row.innerHTML = `
         <td><strong>${studentName}</strong></td>
@@ -575,7 +683,8 @@ async function loadAllLogs() {
         <td><span class="badge" style="background: rgba(139, 92, 246, 0.15); color: var(--accent-violet); border: 1px solid rgba(139, 92, 246, 0.3);">${sessionName}</span></td>
         <td>${log.date}</td>
         <td>${log.checkIn || '--:--:--'}</td>
-        <td>${log.checkOut || '--:--:--'}</td>
+        <td>${checkOutDisplay}</td>
+        <td>${lateBadge}</td>
         <td><span class="badge badge-${log.status}">${log.status}</span></td>
         <td>
           <div style="display: flex; gap: 0.5rem;">
@@ -584,7 +693,7 @@ async function loadAllLogs() {
               <button class="btn btn-rose" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="approveAttendanceLog('${log._id}', 'rejected')">Reject</button>
             ` : ''}
             <button class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" 
-              onclick="triggerEditLogModal('${log._id}', '${studentName}', '${log.date}', '${log.checkIn || ''}', '${log.checkOut || ''}', '${log.status}')">
+              onclick="triggerEditLogModal('${log._id}', '${studentName.replace(/'/g, "\\'")}', '${log.date}', '${log.checkIn || ''}', '${log.checkOut || ''}', '${log.status}', ${Boolean(log.isLate)}, '${(log.lateReason || '').replace(/'/g, "\\'")}', ${Boolean(log.isAutoCheckOut)})">
               Edit
             </button>
           </div>
@@ -648,8 +757,8 @@ async function loadSessions() {
               Modify Schedule
             </button>
             <button class="btn ${s.status === 'blocked' ? 'btn-emerald' : 'btn-rose'}" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" 
-              onclick="toggleSessionBlock('${s._id}', '${s.status}')">
-              ${s.status === 'blocked' ? 'Unblock' : 'Block'}
+              onclick="toggleSessionStatus('${s._id}', '${s.status === 'blocked' ? 'active' : 'blocked'}')">
+              ${s.status === 'blocked' ? 'Activate' : 'Block'}
             </button>
           </div>
         </td>
@@ -664,11 +773,12 @@ async function loadSessions() {
 async function createSession(e) {
   e.preventDefault();
   const name = document.getElementById('new-session-name').value;
-  
-  // Get checked days
-  const checkedDays = Array.from(document.querySelectorAll('input[name="session-days"]:checked')).map(c => c.value);
   const timeStart = document.getElementById('new-session-time-start').value;
   const timeEnd = document.getElementById('new-session-time-end').value;
+
+  // Gather selected days
+  const checkedDays = Array.from(document.querySelectorAll('input[name="session-days"]:checked'))
+    .map(cb => cb.value);
 
   try {
     const res = await fetchAPI('/admin/sessions', {
@@ -682,25 +792,18 @@ async function createSession(e) {
     });
 
     showAlert('admin-alert-success', res.message, 'success');
-    e.target.reset();
-    
-    // Uncheck boxes manually
-    document.querySelectorAll('input[name="session-days"]:checked').forEach(c => c.checked = false);
-    
+    document.getElementById('create-session-form').reset();
     await loadSessions();
-    // Refresh dropdowns cache
-    allSessionsCache = await fetchAPI('/admin/sessions');
   } catch (err) {
     showAlert('admin-alert-danger', err.message, 'danger');
   }
 }
 
-async function toggleSessionBlock(sessionId, currentStatus) {
-  const newStatus = currentStatus === 'blocked' ? 'active' : 'blocked';
+async function toggleSessionStatus(sessionId, nextStatus) {
   try {
     const res = await fetchAPI(`/admin/sessions/${sessionId}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status: newStatus })
+      body: JSON.stringify({ status: nextStatus })
     });
     showAlert('admin-alert-success', res.message, 'success');
     await loadSessions();
@@ -709,27 +812,16 @@ async function toggleSessionBlock(sessionId, currentStatus) {
   }
 }
 
-
-// ==========================================
-// ADMIN: EDIT/MODIFY SCHEDULE LOGIC
-// ==========================================
-
-function triggerEditScheduleModal(sessionId, name, daysStr, timeStart, timeEnd) {
+function triggerEditScheduleModal(sessionId, name, daysCsv, timeStart, timeEnd) {
   document.getElementById('edit-schedule-id').value = sessionId;
-  document.getElementById('edit-schedule-title').innerText = `Edit Session Schedule - ${name}`;
-  
-  // Uncheck all boxes first
-  document.querySelectorAll('input[name="edit-session-days"]').forEach(cb => cb.checked = false);
-  
-  // Check matching boxes
-  const days = daysStr.split(',');
-  days.forEach(day => {
-    const cb = document.querySelector(`input[name="edit-session-days"][value="${day}"]`);
-    if (cb) cb.checked = true;
-  });
+  document.getElementById('edit-schedule-title').innerText = `Edit Schedule for Session: ${name}`;
+  document.getElementById('edit-session-time-start').value = timeStart || '09:00';
+  document.getElementById('edit-session-time-end').value = timeEnd || '17:00';
 
-  document.getElementById('edit-session-time-start').value = timeStart || '';
-  document.getElementById('edit-session-time-end').value = timeEnd || '';
+  const daysArr = daysCsv ? daysCsv.split(',') : [];
+  document.querySelectorAll('input[name="edit-session-days"]').forEach(cb => {
+    cb.checked = daysArr.includes(cb.value);
+  });
 
   openModal('edit-schedule-modal');
 }
@@ -737,9 +829,11 @@ function triggerEditScheduleModal(sessionId, name, daysStr, timeStart, timeEnd) 
 async function submitEditSchedule(e) {
   e.preventDefault();
   const sessionId = document.getElementById('edit-schedule-id').value;
-  const checkedDays = Array.from(document.querySelectorAll('input[name="edit-session-days"]:checked')).map(c => c.value);
   const timeStart = document.getElementById('edit-session-time-start').value;
   const timeEnd = document.getElementById('edit-session-time-end').value;
+
+  const checkedDays = Array.from(document.querySelectorAll('input[name="edit-session-days"]:checked'))
+    .map(cb => cb.value);
 
   try {
     const res = await fetchAPI(`/admin/sessions/${sessionId}/schedule`, {
@@ -761,98 +855,76 @@ async function submitEditSchedule(e) {
 
 
 // ==========================================
-// ADMIN: STUDENT MANAGEMENT LOGIC
+// ADMIN: STUDENTS LOGIC
 // ==========================================
 
 async function loadStudents() {
   const pendingTbody = document.getElementById('pending-students-tbody');
   const allTbody = document.getElementById('all-students-tbody');
-  
   if (!pendingTbody || !allTbody) return;
 
   try {
     const students = await fetchAPI('/admin/students');
     allStudentsCache = students; // refresh cache
 
-    const pending = students.filter(st => !st.isApproved);
-    const approved = students.filter(st => st.isApproved);
+    const pendingStudents = students.filter(s => !s.isApproved);
+    const approvedStudents = students.filter(s => s.isApproved);
 
-    // Render Pending registrations
-    if (pending.length === 0) {
-      pendingTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No pending registrations.</td></tr>';
+    // 1. Render Pending Registrations
+    if (pendingStudents.length === 0) {
+      pendingTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No pending student registrations.</td></tr>';
     } else {
       pendingTbody.innerHTML = '';
-      pending.forEach(st => {
-        const appliedDate = new Date(st.createdAt).toLocaleDateString();
-        
-        // Build session selector selectbox for pending students
-        let sessionOptions = '';
-        allSessionsCache.forEach(s => {
-          const isSelected = st.session && st.session._id === s._id ? 'selected' : '';
-          sessionOptions += `<option value="${s._id}" ${isSelected}>${s.name}</option>`;
-        });
-
+      pendingStudents.forEach(st => {
         const row = document.createElement('tr');
+        
+        let sessionSelectHTML = `<select id="assign-session-${st._id}" class="form-control" style="padding: 0.3rem 0.5rem; font-size: 0.85rem; width: 140px; display: inline-block;">`;
+        allSessionsCache.forEach(sess => {
+          const selected = st.session && st.session._id === sess._id ? 'selected' : '';
+          sessionSelectHTML += `<option value="${sess._id}" ${selected}>${sess.name}</option>`;
+        });
+        sessionSelectHTML += '</select>';
+
         row.innerHTML = `
           <td><strong>${st.name}</strong></td>
           <td>${st.email}</td>
+          <td>${sessionSelectHTML}</td>
+          <td>${new Date(st.createdAt).toLocaleDateString()}</td>
           <td>
-            <select class="form-control" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto;" 
-              onchange="changeStudentSession('${st._id}', this.value)">
-              <option value="" disabled ${!st.session ? 'selected' : ''}>Assign Session</option>
-              ${sessionOptions}
-            </select>
-          </td>
-          <td>${appliedDate}</td>
-          <td>
-            <div style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-emerald" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="approveStudent('${st._id}', true)">
-                Approve Student
-              </button>
-              <button class="btn btn-rose" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="approveStudent('${st._id}', false)">
-                Reject/Delete
-              </button>
-            </div>
+            <button class="btn btn-emerald" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="approveStudentWithSession('${st._id}')">
+              Assign & Approve
+            </button>
           </td>
         `;
         pendingTbody.appendChild(row);
       });
     }
 
-    // Render Approved list
-    if (approved.length === 0) {
-      allTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No registered students in database.</td></tr>';
+    // 2. Render All Registered Students
+    if (approvedStudents.length === 0) {
+      allTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No approved students found.</td></tr>';
     } else {
       allTbody.innerHTML = '';
-      approved.forEach(st => {
+      approvedStudents.forEach(st => {
+        const currentSession = st.session ? st.session.name : 'Unassigned';
         const row = document.createElement('tr');
-        
-        // Build session selector selectbox
-        let sessionOptions = '';
-        allSessionsCache.forEach(s => {
-          const isSelected = st.session && st.session._id === s._id ? 'selected' : '';
-          sessionOptions += `<option value="${s._id}" ${isSelected}>${s.name}</option>`;
+
+        let sessionDropdown = `<select class="form-control" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" onchange="changeStudentSession('${st._id}', this.value)">`;
+        allSessionsCache.forEach(sess => {
+          const selected = st.session && st.session._id === sess._id ? 'selected' : '';
+          sessionDropdown += `<option value="${sess._id}" ${selected}>${sess.name}</option>`;
         });
+        sessionDropdown += '</select>';
 
         row.innerHTML = `
           <td><strong>${st.name}</strong></td>
           <td>${st.email}</td>
-          <td>
-            <span class="badge badge-approved" style="font-weight: 500;">
-              ${st.session ? st.session.name : 'Unassigned'}
-            </span>
-          </td>
+          <td><span class="badge" style="background: rgba(139, 92, 246, 0.15); color: var(--accent-violet); border: 1px solid rgba(139, 92, 246, 0.3);">${currentSession}</span></td>
           <td><span class="badge badge-approved">Approved</span></td>
+          <td>${sessionDropdown}</td>
           <td>
-            <select class="form-control" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto;" 
-              onchange="changeStudentSession('${st._id}', this.value)">
-              <option value="" disabled ${!st.session ? 'selected' : ''}>Assign Session</option>
-              ${sessionOptions}
-            </select>
-          </td>
-          <td>
-            <button class="btn btn-rose" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="approveStudent('${st._id}', false)">
-              Revoke Approval
+            <button class="btn btn-rose" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="toggleStudentApproval('${st._id}', false)">
+              Revoke Access
             </button>
           </td>
         `;
@@ -865,7 +937,31 @@ async function loadStudents() {
   }
 }
 
-async function approveStudent(studentId, isApproved) {
+async function approveStudentWithSession(studentId) {
+  const select = document.getElementById(`assign-session-${studentId}`);
+  const sessionId = select ? select.value : null;
+
+  try {
+    if (sessionId) {
+      await fetchAPI(`/admin/students/${studentId}/session`, {
+        method: 'PUT',
+        body: JSON.stringify({ sessionId })
+      });
+    }
+
+    const res = await fetchAPI(`/admin/students/${studentId}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({ isApproved: true })
+    });
+
+    showAlert('admin-alert-success', res.message, 'success');
+    await loadStudents();
+  } catch (err) {
+    showAlert('admin-alert-danger', err.message, 'danger');
+  }
+}
+
+async function toggleStudentApproval(studentId, isApproved) {
   try {
     const res = await fetchAPI(`/admin/students/${studentId}/approve`, {
       method: 'PUT',
@@ -873,21 +969,6 @@ async function approveStudent(studentId, isApproved) {
     });
     showAlert('admin-alert-success', res.message, 'success');
     await loadStudents();
-    
-    // Refresh student dropdown in logs filter
-    allStudentsCache = await fetchAPI('/admin/students');
-    const filterStud = document.getElementById('filter-student');
-    if (filterStud) {
-      filterStud.innerHTML = '<option value="">All Students</option>';
-      allStudentsCache.forEach(st => {
-        if (st.isApproved) {
-          const opt = document.createElement('option');
-          opt.value = st._id;
-          opt.textContent = `${st.name} (${st.email})`;
-          filterStud.appendChild(opt);
-        }
-      });
-    }
   } catch (err) {
     showAlert('admin-alert-danger', err.message, 'danger');
   }
@@ -911,13 +992,23 @@ async function changeStudentSession(studentId, sessionId) {
 // ADMIN: EDIT RECORD DIALOG
 // ==========================================
 
-function triggerEditLogModal(logId, name, date, checkIn, checkOut, status) {
+function openReasonModal(studentName, date, checkIn, reason) {
+  document.getElementById('reason-modal-student').innerText = studentName;
+  document.getElementById('reason-modal-date-time').innerText = `${date} at ${checkIn || '--:--:--'}`;
+  document.getElementById('reason-modal-text').innerText = reason || 'No reason provided.';
+  openModal('view-reason-modal');
+}
+
+function triggerEditLogModal(logId, name, date, checkIn, checkOut, status, isLate, lateReason, isAutoCheckOut) {
   document.getElementById('edit-log-id').value = logId;
   document.getElementById('edit-log-student-name').value = name;
   document.getElementById('edit-log-date').value = date;
   document.getElementById('edit-log-checkin').value = checkIn;
   document.getElementById('edit-log-checkout').value = checkOut;
   document.getElementById('edit-log-status').value = status;
+  document.getElementById('edit-log-is-late').value = isLate ? 'true' : 'false';
+  document.getElementById('edit-log-late-reason').value = lateReason || '';
+  document.getElementById('edit-log-is-auto').value = isAutoCheckOut ? 'true' : 'false';
   
   openModal('edit-log-modal');
 }
@@ -929,11 +1020,14 @@ async function submitEditLog(e) {
   const checkIn = document.getElementById('edit-log-checkin').value || null;
   const checkOut = document.getElementById('edit-log-checkout').value || null;
   const status = document.getElementById('edit-log-status').value;
+  const isLate = document.getElementById('edit-log-is-late').value === 'true';
+  const lateReason = document.getElementById('edit-log-late-reason').value || null;
+  const isAutoCheckOut = document.getElementById('edit-log-is-auto').value === 'true';
 
   try {
     const res = await fetchAPI(`/admin/attendance/${logId}/edit`, {
       method: 'PUT',
-      body: JSON.stringify({ date, checkIn, checkOut, status })
+      body: JSON.stringify({ date, checkIn, checkOut, status, isLate, lateReason, isAutoCheckOut })
     });
 
     showAlert('admin-alert-success', res.message, 'success');
@@ -979,8 +1073,8 @@ async function openManualLogModal() {
     sessSelect.appendChild(opt);
   });
 
-  // Default date as today
-  const today = new Date().toISOString().split('T')[0];
+  // Default date as today (IST)
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   document.getElementById('manual-log-date').value = today;
 
   openModal('manual-log-modal');

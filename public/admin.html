@@ -109,6 +109,29 @@
       border-radius: 12px;
       padding: 2rem;
     }
+
+    .badge-late {
+      background-color: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+      font-size: 0.72rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .badge-auto {
+      background-color: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      font-size: 0.72rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -164,6 +187,7 @@
               <th>Date</th>
               <th>Check In Time</th>
               <th>Check Out Time</th>
+              <th>Late Reason</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -171,7 +195,7 @@
           <tbody id="pending-logs-tbody">
             <!-- Empty state fallback matching screenshot 2 -->
             <tr>
-              <td colspan="7">
+              <td colspan="8">
                 <div class="empty-state">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0a2 2 0 01-2 2H6a2 2 0 01-2-2m16 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v2m4 6h4v1.5a1.5 1.5 0 01-3 0V17h-1zm3 0h.01M9 17h.01" />
@@ -227,13 +251,14 @@
               <th>Date</th>
               <th>Check In</th>
               <th>Check Out</th>
+              <th>Late Reason</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="all-logs-tbody">
             <tr>
-              <td colspan="8" style="text-align: center; color: var(--text-muted);">Loading logs...</td>
+              <td colspan="9" style="text-align: center; color: var(--text-muted);">Loading logs...</td>
             </tr>
           </tbody>
         </table>
@@ -364,6 +389,34 @@
   </main>
 
   <!-- ========================================== -->
+  <!-- MODAL: VIEW LATE REASON -->
+  <!-- ========================================== -->
+  <div id="view-reason-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="color: #b45309; display: flex; align-items: center; gap: 0.5rem;">
+          <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          Late Check-In Details
+        </h3>
+        <span class="close-btn" onclick="closeModal('view-reason-modal')">&times;</span>
+      </div>
+      <div>
+        <p style="margin-bottom: 0.5rem; font-size: 0.9rem;"><strong>Student:</strong> <span id="reason-modal-student"></span></p>
+        <p style="margin-bottom: 0.5rem; font-size: 0.9rem;"><strong>Date & Check-in:</strong> <span id="reason-modal-date-time"></span></p>
+        <div style="margin-top: 1rem;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #64748b; text-transform: uppercase;">Submitted Reason:</label>
+          <div id="reason-modal-text" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 1rem; font-size: 0.95rem; color: #991b1b; white-space: pre-wrap; margin-top: 0.25rem;"></div>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('view-reason-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
   <!-- MODAL: EDIT ATTENDANCE RECORD -->
   <!-- ========================================== -->
   <div id="edit-log-modal" class="modal">
@@ -392,8 +445,28 @@
             <input type="text" id="edit-log-checkout" class="form-control" placeholder="17:00:00">
           </div>
         </div>
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="edit-log-is-late">Late Check-In?</label>
+            <select id="edit-log-is-late" class="form-control">
+              <option value="false">No (On Time)</option>
+              <option value="true">Yes (Late)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="edit-log-is-auto">Auto Check-Out?</label>
+            <select id="edit-log-is-auto" class="form-control">
+              <option value="false">No (Manual)</option>
+              <option value="true">Yes (Auto)</option>
+            </select>
+          </div>
+        </div>
         <div class="form-group">
-          <label for="edit-log-status">Status</label>
+          <label for="edit-log-late-reason">Late Reason (if late)</label>
+          <textarea id="edit-log-late-reason" class="form-control" rows="2" placeholder="Reason for late check-in..." style="resize: vertical; font-family: inherit; width: 100%;"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="edit-log-status">Approval Status</label>
           <select id="edit-log-status" class="form-control">
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>

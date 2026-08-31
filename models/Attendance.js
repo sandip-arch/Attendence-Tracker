@@ -6,7 +6,10 @@ const attendanceSchema = new mongoose.Schema({
   date: { type: String, required: true }, // Format: YYYY-MM-DD
   checkIn: { type: String, default: null }, // Format: HH:MM:SS
   checkOut: { type: String, default: null }, // Format: HH:MM:SS
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' }
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+  isLate: { type: Boolean, default: false },
+  lateReason: { type: String, default: null },
+  isAutoCheckOut: { type: Boolean, default: false }
 }, { timestamps: true });
 
 // Ensure unique index for student per day

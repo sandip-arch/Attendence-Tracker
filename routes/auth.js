@@ -26,10 +26,11 @@ router.get('/sessions', async (req, res) => {
 // @desc    Register a new student
 // @access  Public
 router.post('/register', async (req, res) => {
-  const { name, email, password, sessionId } = req.body;
+  const { name, email, password, sessionId, session: sessionParam } = req.body;
+  const targetSessionId = sessionId || sessionParam;
 
   try {
-    if (!name || !email || !password || !sessionId) {
+    if (!name || !email || !password || !targetSessionId) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
@@ -40,7 +41,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if target session is valid and active
-    const session = await Session.findById(sessionId);
+    const session = await Session.findById(targetSessionId);
     if (!session) {
       return res.status(404).json({ message: 'Selected session not found' });
     }
@@ -57,7 +58,7 @@ router.post('/register', async (req, res) => {
       email,
       password: hashedPassword,
       role: 'student',
-      session: sessionId,
+      session: targetSessionId,
       isApproved: false
     });
 
